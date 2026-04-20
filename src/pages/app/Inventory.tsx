@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { store, useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,93 +10,56 @@ import { toast } from "sonner";
 import { getExpiryStatus, daysUntil, statusColor, statusLabel } from "@/lib/expiry";
 
 export default function Inventory() {
-  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [openProd, setOpenProd] = useState(false);
   const [openBatch, setOpenBatch] = useState<string | null>(null);
 
-  const { data: products = [] } = useQuery({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*, categories(name, color, warn_days), suppliers(name), batches(*)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as any[];
-    },
-  });
-  const { data: categories = [] } = useQuery({
-    queryKey: ["categories"],
-    queryFn: async () => (await supabase.from("categories").select("*")).data || [],
-  });
-  const { data: suppliers = [] } = useQuery({
-    queryKey: ["suppliers"],
-    queryFn: async () => (await supabase.from("suppliers").select("*")).data || [],
-  });
+  const productsRaw = useStore((s) => s.products);
+  const categories = useStore((s) => s.categories);
+  const suppliers = useStore((s) => s.suppliers);
+  const batches = useStore((s) => s.batches);
 
-  const filtered = products.filter((p: any) =>
+  const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
+  const supMap = Object.fromEntries(suppliers.map((s) => [s.id, s]));
+  const products = productsRaw.map((p) => ({
+    ...p,
+    categories: p.category_id ? catMap[p.category_id] : null,
+    suppliers: p.supplier_id ? supMap[p.supplier_id] : null,
+    batches: batches.filter((b) => b.product_id === p.id),
+  }));
+
+  const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     (p.sku || "").toLowerCase().includes(search.toLowerCase()),
   );
 
-  const addProduct = useMutation({
-    mutationFn: async (form: any) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("products").insert({
-        user_id: user!.id,
-        name: form.name,
-        sku: form.sku || null,
-        category_id: form.category_id || null,
-        supplier_id: form.supplier_id || null,
-        unit_price: parseFloat(form.unit_price) || 0,
-        low_stock_threshold: parseInt(form.low_stock_threshold) || 5,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Product added");
-      setOpenProd(false);
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
+  const handleAddProduct = (form: any) => {
+    store.addProduct({
+      name: form.name,
+      sku: form.sku || null,
+      category_id: form.category_id || null,
+      supplier_id: form.supplier_id || null,
+      unit_price: parseFloat(form.unit_price) || 0,
+      low_stock_threshold: parseInt(form.low_stock_threshold) || 5,
+    });
+    toast.success("Product added");
+    setOpenProd(false);
+  };
 
-  const addBatch = useMutation({
-    mutationFn: async ({ product_id, quantity, expiry_date }: any) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("batches").insert({
-        user_id: user!.id, product_id, quantity: parseInt(quantity), expiry_date,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Batch added");
-      setOpenBatch(null);
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const deleteProduct = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("products").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Product deleted");
-    },
-  });
+  const handleAddBatch = ({ product_id, quantity, expiry_date }: any) => {
+    store.addBatch({ product_id, quantity: parseInt(quantity), expiry_date });
+    toast.success("Batch added");
+    setOpenBatch(null);
+  };
 
   const exportCSV = () => {
     const rows = [["Name", "SKU", "Category", "Supplier", "Unit Price", "Total Qty", "Earliest Expiry"]];
-    filtered.forEach((p: any) => {
-      const totalQty = p.batches?.reduce((s: number, b: any) => s + b.quantity, 0) || 0;
-      const earliest = p.batches?.length
-        ? p.batches.reduce((min: any, b: any) => (b.expiry_date < min ? b.expiry_date : min), p.batches[0].expiry_date)
+    filtered.forEach((p) => {
+      const totalQty = p.batches.reduce((s, b) => s + b.quantity, 0);
+      const earliest = p.batches.length
+        ? p.batches.reduce((min, b) => (b.expiry_date < min ? b.expiry_date : min), p.batches[0].expiry_date)
         : "";
-      rows.push([p.name, p.sku || "", p.categories?.name || "", p.suppliers?.name || "", p.unit_price, totalQty, earliest]);
+      rows.push([p.name, p.sku || "", p.categories?.name || "", p.suppliers?.name || "", String(p.unit_price), String(totalQty), earliest]);
     });
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -120,7 +82,7 @@ export default function Inventory() {
             <DialogTrigger asChild><Button variant="accent" className="rounded-full"><Plus className="h-4 w-4" /> Add product</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>New product</DialogTitle></DialogHeader>
-              <ProductForm onSubmit={(f) => addProduct.mutate(f)} categories={categories} suppliers={suppliers} loading={addProduct.isPending} />
+              <ProductForm onSubmit={handleAddProduct} categories={categories} suppliers={suppliers} />
             </DialogContent>
           </Dialog>
         </div>
@@ -138,8 +100,8 @@ export default function Inventory() {
             <p className="text-muted-foreground">No products yet. Add your first one to start tracking expiry.</p>
           </div>
         )}
-        {filtered.map((p: any) => {
-          const totalQty = p.batches?.reduce((s: number, b: any) => s + b.quantity, 0) || 0;
+        {filtered.map((p) => {
+          const totalQty = p.batches.reduce((s, b) => s + b.quantity, 0);
           const lowStock = totalQty <= p.low_stock_threshold;
           return (
             <div key={p.id} className="glass-card rounded-2xl p-5">
@@ -165,17 +127,17 @@ export default function Inventory() {
                     <DialogTrigger asChild><Button size="sm" variant="hero" className="rounded-full"><Plus className="h-3 w-3" /> Batch</Button></DialogTrigger>
                     <DialogContent>
                       <DialogHeader><DialogTitle>Add batch — {p.name}</DialogTitle></DialogHeader>
-                      <BatchForm onSubmit={(f) => addBatch.mutate({ ...f, product_id: p.id })} loading={addBatch.isPending} />
+                      <BatchForm onSubmit={(f: any) => handleAddBatch({ ...f, product_id: p.id })} />
                     </DialogContent>
                   </Dialog>
-                  <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete this product and all its batches?")) deleteProduct.mutate(p.id); }}>
+                  <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete this product and all its batches?")) { store.deleteProduct(p.id); toast.success("Product deleted"); } }}>
                     <Trash2 className="h-4 w-4 text-danger" />
                   </Button>
                 </div>
               </div>
-              {p.batches?.length > 0 && (
+              {p.batches.length > 0 && (
                 <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {p.batches.sort((a: any, b: any) => a.expiry_date.localeCompare(b.expiry_date)).map((b: any) => {
+                  {[...p.batches].sort((a, b) => a.expiry_date.localeCompare(b.expiry_date)).map((b) => {
                     const s = getExpiryStatus(b.expiry_date, p.categories?.warn_days);
                     const d = daysUntil(b.expiry_date);
                     return (
@@ -198,7 +160,7 @@ export default function Inventory() {
   );
 }
 
-function ProductForm({ onSubmit, categories, suppliers, loading }: any) {
+function ProductForm({ onSubmit, categories, suppliers }: any) {
   const [form, setForm] = useState({ name: "", sku: "", category_id: "", supplier_id: "", unit_price: "0", low_stock_threshold: "5" });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-4">
@@ -224,18 +186,18 @@ function ProductForm({ onSubmit, categories, suppliers, loading }: any) {
         </div>
       </div>
       <div><Label>Low-stock threshold</Label><Input type="number" value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
-      <DialogFooter><Button type="submit" variant="accent" disabled={loading}>{loading ? "Saving…" : "Add product"}</Button></DialogFooter>
+      <DialogFooter><Button type="submit" variant="accent">Add product</Button></DialogFooter>
     </form>
   );
 }
 
-function BatchForm({ onSubmit, loading }: any) {
+function BatchForm({ onSubmit }: any) {
   const [form, setForm] = useState({ quantity: "1", expiry_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="space-y-4">
       <div><Label>Quantity *</Label><Input type="number" required min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></div>
       <div><Label>Expiry date *</Label><Input type="date" required value={form.expiry_date} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} /></div>
-      <DialogFooter><Button type="submit" variant="accent" disabled={loading}>{loading ? "Saving…" : "Add batch"}</Button></DialogFooter>
+      <DialogFooter><Button type="submit" variant="accent">Add batch</Button></DialogFooter>
     </form>
   );
 }
