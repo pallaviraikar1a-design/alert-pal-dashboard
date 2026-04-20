@@ -1,20 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useStore } from "@/lib/store";
 import { getExpiryStatus, daysUntil, statusColor, statusLabel } from "@/lib/expiry";
 import { Bell } from "lucide-react";
 
 export default function Alerts() {
-  const { data: batches = [] } = useQuery({
-    queryKey: ["alerts-batches"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("batches")
-        .select("*, products(name, unit_price, categories(name, warn_days))")
-        .order("expiry_date", { ascending: true });
-      if (error) throw error;
-      return data as any[];
-    },
-  });
+  const products = useStore((s) => s.products);
+  const categories = useStore((s) => s.categories);
+  const batchesRaw = useStore((s) => s.batches);
+  const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
+  const prodMap = Object.fromEntries(products.map((p) => [p.id, p]));
+  const batches = [...batchesRaw]
+    .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date))
+    .map((b) => {
+      const p = prodMap[b.product_id];
+      const cat = p?.category_id ? catMap[p.category_id] : null;
+      return { ...b, products: p ? { name: p.name, unit_price: p.unit_price, categories: cat ? { name: cat.name, warn_days: cat.warn_days } : null } : null };
+    });
 
   const grouped = {
     expired: batches.filter((b) => getExpiryStatus(b.expiry_date) === "expired"),

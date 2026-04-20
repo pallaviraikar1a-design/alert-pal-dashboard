@@ -1,6 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useStore } from "@/lib/store";
 import { getExpiryStatus, daysUntil, statusColor, statusLabel } from "@/lib/expiry";
 import { Package, AlertTriangle, TrendingDown, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -16,28 +14,12 @@ const Stat = ({ icon: Icon, label, value, accent }: any) => (
 );
 
 export default function Dashboard() {
-  const { user } = useAuth();
-
-  const { data: products = [] } = useQuery({
-    queryKey: ["dash-products", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: batches = [] } = useQuery({
-    queryKey: ["dash-batches", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("batches")
-        .select("*, products(name, unit_price)")
-        .order("expiry_date", { ascending: true });
-      if (error) throw error;
-      return data as any[];
-    },
-  });
+  const products = useStore((s) => s.products);
+  const batchesRaw = useStore((s) => s.batches);
+  const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+  const batches = [...batchesRaw]
+    .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date))
+    .map((b) => ({ ...b, products: productMap[b.product_id] ? { name: productMap[b.product_id].name, unit_price: productMap[b.product_id].unit_price } : null }));
 
   const totalProducts = products.length;
   const expiring = batches.filter((b) => getExpiryStatus(b.expiry_date) === "expiring");

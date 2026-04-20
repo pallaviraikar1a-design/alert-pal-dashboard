@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { store, useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,32 +9,22 @@ import { Plus, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Suppliers() {
-  const qc = useQueryClient();
+  const items = useStore((s) => s.suppliers);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", contact_email: "", phone: "", notes: "" });
 
-  const { data: items = [] } = useQuery({
-    queryKey: ["suppliers-page"],
-    queryFn: async () => (await supabase.from("suppliers").select("*").order("name")).data || [],
-  });
-
-  const add = useMutation({
-    mutationFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("suppliers").insert({
-        user_id: user!.id, name: form.name,
-        contact_email: form.contact_email || null, phone: form.phone || null, notes: form.notes || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers-page"] }); qc.invalidateQueries({ queryKey: ["suppliers"] }); toast.success("Supplier added"); setOpen(false); setForm({ name: "", contact_email: "", phone: "", notes: "" }); },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const del = useMutation({
-    mutationFn: async (id: string) => { const { error } = await supabase.from("suppliers").delete().eq("id", id); if (error) throw error; },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers-page"] }); toast.success("Deleted"); },
-  });
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    store.addSupplier({
+      name: form.name,
+      contact_email: form.contact_email || null,
+      phone: form.phone || null,
+      notes: form.notes || null,
+    });
+    toast.success("Supplier added");
+    setOpen(false);
+    setForm({ name: "", contact_email: "", phone: "", notes: "" });
+  };
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -45,14 +34,14 @@ export default function Suppliers() {
           <DialogTrigger asChild><Button variant="accent" className="rounded-full"><Plus className="h-4 w-4" /> Add supplier</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>New supplier</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); add.mutate(); }} className="space-y-4">
+            <form onSubmit={submit} className="space-y-4">
               <div><Label>Name *</Label><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Email</Label><Input type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></div>
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
               </div>
               <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-              <DialogFooter><Button variant="accent" disabled={add.isPending}>{add.isPending ? "Saving…" : "Add"}</Button></DialogFooter>
+              <DialogFooter><Button variant="accent">Add</Button></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -60,7 +49,7 @@ export default function Suppliers() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {items.length === 0 && <div className="glass-card rounded-2xl p-12 text-center text-muted-foreground col-span-full"><Truck className="h-10 w-10 mx-auto mb-3" />No suppliers yet.</div>}
-        {items.map((s: any) => (
+        {items.map((s) => (
           <div key={s.id} className="glass-card rounded-2xl p-5">
             <div className="flex items-start justify-between">
               <div>
@@ -68,7 +57,7 @@ export default function Suppliers() {
                 {s.contact_email && <div className="text-sm text-muted-foreground">{s.contact_email}</div>}
                 {s.phone && <div className="text-sm text-muted-foreground">{s.phone}</div>}
               </div>
-              <Button size="sm" variant="ghost" onClick={() => del.mutate(s.id)}><Trash2 className="h-4 w-4 text-danger" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => { store.deleteSupplier(s.id); toast.success("Deleted"); }}><Trash2 className="h-4 w-4 text-danger" /></Button>
             </div>
             {s.notes && <p className="text-sm text-muted-foreground mt-3">{s.notes}</p>}
           </div>

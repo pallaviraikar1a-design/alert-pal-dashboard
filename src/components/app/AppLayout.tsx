@@ -1,13 +1,10 @@
-import { ReactNode } from "react";
-import { Navigate, Outlet, Link, useLocation } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+import { Outlet, Link } from "react-router-dom";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, Package, Bell, Tag, Truck, Settings, LogOut, Hourglass } from "lucide-react";
+import { LayoutDashboard, Package, Bell, Tag, Truck, Settings, Hourglass } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { Button } from "@/components/ui/button";
 
 const items = [
   { title: "Dashboard", url: "/app", icon: LayoutDashboard, end: true },
@@ -21,7 +18,6 @@ const items = [
 const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { signOut } = useAuth();
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
@@ -53,23 +49,12 @@ const AppSidebar = () => {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <div className="mt-auto p-3">
-          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={signOut}>
-            <LogOut className="h-4 w-4" />
-            {!collapsed && <span>Sign out</span>}
-          </Button>
-        </div>
       </SidebarContent>
     </Sidebar>
   );
 };
 
 export const AppLayout = () => {
-  const { user, loading } = useAuth();
-  const loc = useLocation();
-  if (loading) return <div className="min-h-screen grid place-items-center text-muted-foreground">Loading…</div>;
-  if (!user) return <Navigate to={`/auth?redirect=${encodeURIComponent(loc.pathname)}`} replace />;
-
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
