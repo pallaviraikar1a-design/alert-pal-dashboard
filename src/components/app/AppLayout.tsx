@@ -1,10 +1,12 @@
-import { Outlet, Link } from "react-router-dom";
+import { Outlet, Link, Navigate } from "react-router-dom";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, Package, Bell, Tag, Truck, Settings, Hourglass } from "lucide-react";
+import { LayoutDashboard, Package, Bell, Tag, Truck, Settings, Hourglass, LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 
 const items = [
   { title: "Dashboard", url: "/app", icon: LayoutDashboard, end: true },
@@ -55,6 +57,13 @@ const AppSidebar = () => {
 };
 
 export const AppLayout = () => {
+  const { user, loading, signOut } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen grid place-items-center text-muted-foreground">Loading…</div>;
+  }
+  if (!user) return <Navigate to="/auth" replace />;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
@@ -63,6 +72,10 @@ export const AppLayout = () => {
           <header className="h-14 flex items-center gap-3 px-4 border-b border-border/60 bg-background/60 backdrop-blur">
             <SidebarTrigger />
             <Link to="/" className="text-xs text-muted-foreground hover:text-foreground">← Back to site</Link>
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-xs text-muted-foreground hidden sm:inline">{user.email}</span>
+              <Button size="sm" variant="ghost" onClick={signOut}><LogOut className="h-4 w-4" /> Sign out</Button>
+            </div>
           </header>
           <main className="flex-1 p-6 md:p-8">
             <Outlet />

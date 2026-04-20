@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { store, useStore } from "@/lib/store";
+import {
+  useProducts, useCategories, useSuppliers, useBatches,
+  useAddProduct, useDeleteProduct, useAddBatch,
+} from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,10 +17,13 @@ export default function Inventory() {
   const [openProd, setOpenProd] = useState(false);
   const [openBatch, setOpenBatch] = useState<string | null>(null);
 
-  const productsRaw = useStore((s) => s.products);
-  const categories = useStore((s) => s.categories);
-  const suppliers = useStore((s) => s.suppliers);
-  const batches = useStore((s) => s.batches);
+  const { data: productsRaw = [] } = useProducts();
+  const { data: categories = [] } = useCategories();
+  const { data: suppliers = [] } = useSuppliers();
+  const { data: batches = [] } = useBatches();
+  const addProductMut = useAddProduct();
+  const delProductMut = useDeleteProduct();
+  const addBatchMut = useAddBatch();
 
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
   const supMap = Object.fromEntries(suppliers.map((s) => [s.id, s]));
@@ -33,23 +39,27 @@ export default function Inventory() {
     (p.sku || "").toLowerCase().includes(search.toLowerCase()),
   );
 
-  const handleAddProduct = (form: any) => {
-    store.addProduct({
-      name: form.name,
-      sku: form.sku || null,
-      category_id: form.category_id || null,
-      supplier_id: form.supplier_id || null,
-      unit_price: parseFloat(form.unit_price) || 0,
-      low_stock_threshold: parseInt(form.low_stock_threshold) || 5,
-    });
-    toast.success("Product added");
-    setOpenProd(false);
+  const handleAddProduct = async (form: any) => {
+    try {
+      await addProductMut.mutateAsync({
+        name: form.name,
+        sku: form.sku || null,
+        category_id: form.category_id || null,
+        supplier_id: form.supplier_id || null,
+        unit_price: parseFloat(form.unit_price) || 0,
+        low_stock_threshold: parseInt(form.low_stock_threshold) || 5,
+      });
+      toast.success("Product added");
+      setOpenProd(false);
+    } catch (err: any) { toast.error(err.message); }
   };
 
-  const handleAddBatch = ({ product_id, quantity, expiry_date }: any) => {
-    store.addBatch({ product_id, quantity: parseInt(quantity), expiry_date });
-    toast.success("Batch added");
-    setOpenBatch(null);
+  const handleAddBatch = async ({ product_id, quantity, expiry_date }: any) => {
+    try {
+      await addBatchMut.mutateAsync({ product_id, quantity: parseInt(quantity), expiry_date });
+      toast.success("Batch added");
+      setOpenBatch(null);
+    } catch (err: any) { toast.error(err.message); }
   };
 
   const exportCSV = () => {
@@ -130,7 +140,7 @@ export default function Inventory() {
                       <BatchForm onSubmit={(f: any) => handleAddBatch({ ...f, product_id: p.id })} />
                     </DialogContent>
                   </Dialog>
-                  <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete this product and all its batches?")) { store.deleteProduct(p.id); toast.success("Product deleted"); } }}>
+                  <Button size="sm" variant="ghost" onClick={async () => { if (confirm("Delete this product and all its batches?")) { try { await delProductMut.mutateAsync(p.id); toast.success("Product deleted"); } catch (e: any) { toast.error(e.message); } } }}>
                     <Trash2 className="h-4 w-4 text-danger" />
                   </Button>
                 </div>

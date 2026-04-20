@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { store, useStore } from "@/lib/store";
+import { useCategories, useAddCategory, useDeleteCategory } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,16 +8,20 @@ import { Plus, Trash2, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Categories() {
-  const items = useStore((s) => s.categories);
+  const { data: items = [] } = useCategories();
+  const addMut = useAddCategory();
+  const delMut = useDeleteCategory();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", color: "#a78bfa", warn_days: "7" });
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    store.addCategory({ name: form.name, color: form.color, warn_days: parseInt(form.warn_days) || 7 });
-    toast.success("Category added");
-    setOpen(false);
-    setForm({ name: "", color: "#a78bfa", warn_days: "7" });
+    try {
+      await addMut.mutateAsync({ name: form.name, color: form.color, warn_days: parseInt(form.warn_days) || 7 });
+      toast.success("Category added");
+      setOpen(false);
+      setForm({ name: "", color: "#a78bfa", warn_days: "7" });
+    } catch (err: any) { toast.error(err.message); }
   };
 
   return (
@@ -34,7 +38,7 @@ export default function Categories() {
                 <div><Label>Color</Label><Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></div>
                 <div><Label>Warn days before expiry</Label><Input type="number" min="1" value={form.warn_days} onChange={(e) => setForm({ ...form, warn_days: e.target.value })} /></div>
               </div>
-              <DialogFooter><Button variant="accent">Add</Button></DialogFooter>
+              <DialogFooter><Button variant="accent" disabled={addMut.isPending}>Add</Button></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -51,7 +55,7 @@ export default function Categories() {
                 <div className="text-xs text-muted-foreground">Warn {c.warn_days} days before expiry</div>
               </div>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => { store.deleteCategory(c.id); toast.success("Deleted"); }}><Trash2 className="h-4 w-4 text-danger" /></Button>
+            <Button size="sm" variant="ghost" onClick={async () => { try { await delMut.mutateAsync(c.id); toast.success("Deleted"); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4 text-danger" /></Button>
           </div>
         ))}
       </div>

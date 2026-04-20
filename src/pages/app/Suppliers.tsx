@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { store, useStore } from "@/lib/store";
+import { useSuppliers, useAddSupplier, useDeleteSupplier } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,21 +9,25 @@ import { Plus, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Suppliers() {
-  const items = useStore((s) => s.suppliers);
+  const { data: items = [] } = useSuppliers();
+  const addMut = useAddSupplier();
+  const delMut = useDeleteSupplier();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", contact_email: "", phone: "", notes: "" });
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    store.addSupplier({
-      name: form.name,
-      contact_email: form.contact_email || null,
-      phone: form.phone || null,
-      notes: form.notes || null,
-    });
-    toast.success("Supplier added");
-    setOpen(false);
-    setForm({ name: "", contact_email: "", phone: "", notes: "" });
+    try {
+      await addMut.mutateAsync({
+        name: form.name,
+        contact_email: form.contact_email || null,
+        phone: form.phone || null,
+        notes: form.notes || null,
+      });
+      toast.success("Supplier added");
+      setOpen(false);
+      setForm({ name: "", contact_email: "", phone: "", notes: "" });
+    } catch (err: any) { toast.error(err.message); }
   };
 
   return (
@@ -41,7 +45,7 @@ export default function Suppliers() {
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
               </div>
               <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-              <DialogFooter><Button variant="accent">Add</Button></DialogFooter>
+              <DialogFooter><Button variant="accent" disabled={addMut.isPending}>Add</Button></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -57,7 +61,7 @@ export default function Suppliers() {
                 {s.contact_email && <div className="text-sm text-muted-foreground">{s.contact_email}</div>}
                 {s.phone && <div className="text-sm text-muted-foreground">{s.phone}</div>}
               </div>
-              <Button size="sm" variant="ghost" onClick={() => { store.deleteSupplier(s.id); toast.success("Deleted"); }}><Trash2 className="h-4 w-4 text-danger" /></Button>
+              <Button size="sm" variant="ghost" onClick={async () => { try { await delMut.mutateAsync(s.id); toast.success("Deleted"); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4 text-danger" /></Button>
             </div>
             {s.notes && <p className="text-sm text-muted-foreground mt-3">{s.notes}</p>}
           </div>

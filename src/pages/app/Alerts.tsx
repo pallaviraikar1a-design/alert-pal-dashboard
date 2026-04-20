@@ -1,11 +1,11 @@
-import { useStore } from "@/lib/store";
+import { useProducts, useBatches, useCategories } from "@/lib/store";
 import { getExpiryStatus, daysUntil, statusColor, statusLabel } from "@/lib/expiry";
 import { Bell } from "lucide-react";
 
 export default function Alerts() {
-  const products = useStore((s) => s.products);
-  const categories = useStore((s) => s.categories);
-  const batchesRaw = useStore((s) => s.batches);
+  const { data: products = [] } = useProducts();
+  const { data: categories = [] } = useCategories();
+  const { data: batchesRaw = [] } = useBatches();
   const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
   const prodMap = Object.fromEntries(products.map((p) => [p.id, p]));
   const batches = [...batchesRaw]
