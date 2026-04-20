@@ -1,4 +1,4 @@
-import { useStore } from "@/lib/store";
+import { useProducts, useBatches } from "@/lib/store";
 import { getExpiryStatus, daysUntil, statusColor, statusLabel } from "@/lib/expiry";
 import { Package, AlertTriangle, TrendingDown, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,8 +14,8 @@ const Stat = ({ icon: Icon, label, value, accent }: any) => (
 );
 
 export default function Dashboard() {
-  const products = useStore((s) => s.products);
-  const batchesRaw = useStore((s) => s.batches);
+  const { data: products = [] } = useProducts();
+  const { data: batchesRaw = [] } = useBatches();
   const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
   const batches = [...batchesRaw]
     .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date))

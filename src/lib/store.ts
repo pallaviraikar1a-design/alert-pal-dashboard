@@ -1,133 +1,178 @@
-// Frontend-only in-memory store with localStorage persistence and pub/sub.
-// Replaces previous backend (Supabase) for a demo-only experience.
+// React Query hooks backed by Lovable Cloud (Supabase). RLS scopes everything per user.
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 export type Category = { id: string; name: string; color: string; warn_days: number };
 export type Supplier = { id: string; name: string; contact_email: string | null; phone: string | null; notes: string | null };
 export type Batch = { id: string; product_id: string; quantity: number; expiry_date: string; received_at: string };
 export type Product = {
-  id: string;
-  name: string;
-  sku: string | null;
-  category_id: string | null;
-  supplier_id: string | null;
-  unit_price: number;
-  low_stock_threshold: number;
-  created_at: string;
+  id: string; name: string; sku: string | null; category_id: string | null; supplier_id: string | null;
+  unit_price: number; low_stock_threshold: number; created_at: string;
 };
-export type Profile = { display_name: string; store_name: string; email: string };
+export type Profile = { display_name: string | null; store_name: string | null };
 
-type State = {
-  profile: Profile;
-  categories: Category[];
-  suppliers: Supplier[];
-  products: Product[];
-  batches: Batch[];
+const KEYS = {
+  categories: ["categories"] as const,
+  suppliers: ["suppliers"] as const,
+  products: ["products"] as const,
+  batches: ["batches"] as const,
+  profile: ["profile"] as const,
 };
 
-const KEY = "expiry-demo-store-v1";
-const uid = () => Math.random().toString(36).slice(2, 10);
-const today = () => new Date().toISOString().slice(0, 10);
-const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+export const useCategories = () =>
+  useQuery({
+    queryKey: KEYS.categories,
+    queryFn: async (): Promise<Category[]> => {
+      const { data, error } = await supabase.from("categories").select("id,name,color,warn_days").order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
-const seed = (): State => {
-  const dairy: Category = { id: uid(), name: "Dairy", color: "#60a5fa", warn_days: 5 };
-  const bakery: Category = { id: uid(), name: "Bakery", color: "#f59e0b", warn_days: 3 };
-  const produce: Category = { id: uid(), name: "Produce", color: "#34d399", warn_days: 4 };
-  const acme: Supplier = { id: uid(), name: "Acme Distributors", contact_email: "orders@acme.test", phone: "+1 555 0100", notes: "Weekly deliveries" };
-  const sun: Supplier = { id: uid(), name: "Sunrise Bakery Co.", contact_email: "hello@sunrise.test", phone: null, notes: null };
+export const useSuppliers = () =>
+  useQuery({
+    queryKey: KEYS.suppliers,
+    queryFn: async (): Promise<Supplier[]> => {
+      const { data, error } = await supabase.from("suppliers").select("id,name,contact_email,phone,notes").order("name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
-  const milk: Product = { id: uid(), name: "Whole Milk 1L", sku: "MLK-001", category_id: dairy.id, supplier_id: acme.id, unit_price: 2.49, low_stock_threshold: 6, created_at: new Date().toISOString() };
-  const yogurt: Product = { id: uid(), name: "Greek Yogurt 500g", sku: "YGT-500", category_id: dairy.id, supplier_id: acme.id, unit_price: 3.99, low_stock_threshold: 4, created_at: new Date().toISOString() };
-  const bread: Product = { id: uid(), name: "Sourdough Loaf", sku: "BRD-SD", category_id: bakery.id, supplier_id: sun.id, unit_price: 4.5, low_stock_threshold: 3, created_at: new Date().toISOString() };
-  const apples: Product = { id: uid(), name: "Gala Apples (kg)", sku: "APL-G", category_id: produce.id, supplier_id: acme.id, unit_price: 2.99, low_stock_threshold: 10, created_at: new Date().toISOString() };
+export const useProducts = () =>
+  useQuery({
+    queryKey: KEYS.products,
+    queryFn: async (): Promise<Product[]> => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id,name,sku,category_id,supplier_id,unit_price,low_stock_threshold,created_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((p) => ({ ...p, unit_price: Number(p.unit_price) }));
+    },
+  });
 
-  const batches: Batch[] = [
-    { id: uid(), product_id: milk.id, quantity: 8, expiry_date: inDays(2), received_at: today() },
-    { id: uid(), product_id: milk.id, quantity: 12, expiry_date: inDays(9), received_at: today() },
-    { id: uid(), product_id: yogurt.id, quantity: 3, expiry_date: inDays(-1), received_at: today() },
-    { id: uid(), product_id: bread.id, quantity: 5, expiry_date: inDays(1), received_at: today() },
-    { id: uid(), product_id: apples.id, quantity: 20, expiry_date: inDays(6), received_at: today() },
-  ];
+export const useBatches = () =>
+  useQuery({
+    queryKey: KEYS.batches,
+    queryFn: async (): Promise<Batch[]> => {
+      const { data, error } = await supabase.from("batches").select("id,product_id,quantity,expiry_date,received_at");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
-  return {
-    profile: { display_name: "Demo User", store_name: "My Demo Store", email: "demo@example.com" },
-    categories: [dairy, bakery, produce],
-    suppliers: [acme, sun],
-    products: [milk, yogurt, bread, apples],
-    batches,
-  };
+export const useProfile = () => {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: KEYS.profile,
+    enabled: !!user,
+    queryFn: async (): Promise<Profile | null> => {
+      const { data, error } = await supabase.from("profiles").select("display_name,store_name").eq("user_id", user!.id).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
 };
 
-const load = (): State => {
-  if (typeof window === "undefined") return seed();
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as State;
-  } catch {}
-  const s = seed();
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {}
-  return s;
+// Mutations
+export const useAddCategory = () => {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (c: Omit<Category, "id">) => {
+      const { error } = await supabase.from("categories").insert({ ...c, user_id: user!.id });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.categories }),
+  });
+};
+export const useDeleteCategory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("categories").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEYS.categories }); qc.invalidateQueries({ queryKey: KEYS.products }); },
+  });
 };
 
-let state: State = load();
-const listeners = new Set<() => void>();
-const persist = () => {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
-  listeners.forEach((l) => l());
+export const useAddSupplier = () => {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (s: Omit<Supplier, "id">) => {
+      const { error } = await supabase.from("suppliers").insert({ ...s, user_id: user!.id });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.suppliers }),
+  });
+};
+export const useDeleteSupplier = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("suppliers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEYS.suppliers }); qc.invalidateQueries({ queryKey: KEYS.products }); },
+  });
 };
 
-export const store = {
-  subscribe(l: () => void) { listeners.add(l); return () => listeners.delete(l); },
-  getState() { return state; },
-  reset() { state = seed(); persist(); },
-
-  // Profile
-  updateProfile(p: Partial<Profile>) { state = { ...state, profile: { ...state.profile, ...p } }; persist(); },
-
-  // Categories
-  addCategory(c: Omit<Category, "id">) { state = { ...state, categories: [...state.categories, { ...c, id: uid() }] }; persist(); },
-  deleteCategory(id: string) {
-    state = {
-      ...state,
-      categories: state.categories.filter((c) => c.id !== id),
-      products: state.products.map((p) => (p.category_id === id ? { ...p, category_id: null } : p)),
-    };
-    persist();
-  },
-
-  // Suppliers
-  addSupplier(s: Omit<Supplier, "id">) { state = { ...state, suppliers: [...state.suppliers, { ...s, id: uid() }] }; persist(); },
-  deleteSupplier(id: string) {
-    state = {
-      ...state,
-      suppliers: state.suppliers.filter((s) => s.id !== id),
-      products: state.products.map((p) => (p.supplier_id === id ? { ...p, supplier_id: null } : p)),
-    };
-    persist();
-  },
-
-  // Products
-  addProduct(p: Omit<Product, "id" | "created_at">) {
-    state = { ...state, products: [{ ...p, id: uid(), created_at: new Date().toISOString() }, ...state.products] };
-    persist();
-  },
-  deleteProduct(id: string) {
-    state = {
-      ...state,
-      products: state.products.filter((p) => p.id !== id),
-      batches: state.batches.filter((b) => b.product_id !== id),
-    };
-    persist();
-  },
-
-  // Batches
-  addBatch(b: Omit<Batch, "id" | "received_at">) {
-    state = { ...state, batches: [...state.batches, { ...b, id: uid(), received_at: today() }] };
-    persist();
-  },
-  deleteBatch(id: string) { state = { ...state, batches: state.batches.filter((b) => b.id !== id) }; persist(); },
+export const useAddProduct = () => {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (p: Omit<Product, "id" | "created_at">) => {
+      const { error } = await supabase.from("products").insert({ ...p, user_id: user!.id });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.products }),
+  });
+};
+export const useDeleteProduct = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("products").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEYS.products }); qc.invalidateQueries({ queryKey: KEYS.batches }); },
+  });
 };
 
-import { useSyncExternalStore } from "react";
-export const useStore = <T,>(selector: (s: State) => T): T =>
-  useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
+export const useAddBatch = () => {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (b: Omit<Batch, "id" | "received_at">) => {
+      const { error } = await supabase.from("batches").insert({ ...b, user_id: user!.id });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.batches }),
+  });
+};
+export const useDeleteBatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("batches").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.batches }),
+  });
+};
+
+export const useUpdateProfile = () => {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (p: Partial<Profile>) => {
+      const { error } = await supabase.from("profiles").update(p).eq("user_id", user!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEYS.profile }),
+  });
+};
